@@ -2,9 +2,10 @@
 *.exe
 *.exe~
 *.dll
-*.so
 *.dylib
-fasentneo
+*.so
+!/android/app/src/main/jniLibs/**/*.so
+/fasentneo.exe
 dist/
 
 # Test binary
@@ -28,3 +29,11 @@ $RECYCLE.BIN/
 # Temp
 *.tmp
 *.log
+
+# Android build outputs
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/*.iml
+android/.idea/

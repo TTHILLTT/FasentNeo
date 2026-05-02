@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-binaries:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -21,9 +21,6 @@ jobs:
             goarch: amd64
             ext: ""
           - goos: linux
-            goarch: arm64
-            ext: ""
-          - goos: android
             goarch: arm64
             ext: ""
 
@@ -46,16 +43,50 @@ jobs:
           name: fasentneo-${{ matrix.goos }}-${{ matrix.goarch }}
           path: fasentneo-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
 
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build Go binary for Android
+        run: |
+          GOOS=android GOARCH=arm64 CGO_ENABLED=0 \
+            go build -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
+            -o android/app/src/main/jniLibs/arm64-v8a/libfasentneo.so .
+
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew 2>/dev/null || true
+          ./gradlew assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fasentneo-android-apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+
   release:
-    needs: build
+    needs: [build-binaries, build-apk]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: dist
 
-      - name: List artifacts
-        run: ls -R dist/
+      - name: Rename APK
+        run: |
+          find dist -name "*.apk" -exec mv {} dist/fasentneo-android-arm64.apk \; 2>/dev/null || true
+          find dist -type f | sort
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
