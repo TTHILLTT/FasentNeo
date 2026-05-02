@@ -50,6 +50,7 @@ func NewHandler(d *discovery.Service, t *transfer.Manager, web embed.FS, uploads
 
 	h.mux.HandleFunc("/api/devices", h.handleDevices)
 	h.mux.HandleFunc("/api/info", h.handleInfo)
+	h.mux.HandleFunc("/api/set-device-name", h.handleSetDeviceName)
 	h.mux.HandleFunc("/api/downloads", h.handleDownloads)
 	h.mux.HandleFunc("/api/send", h.handleSend)
 	h.mux.HandleFunc("/ws", h.handleWebSocket)
@@ -152,6 +153,22 @@ func (h *Handler) handleInfo(w http.ResponseWriter, r *http.Request) {
 		"port": h.discovery.Port(),
 		"ips":  getLocalIPs(),
 	})
+}
+
+func (h *Handler) handleSetDeviceName(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		writeJSON(w, map[string]string{"error": "name is required"})
+		return
+	}
+	h.discovery.SetName(req.Name)
+	writeJSON(w, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) handleDownloads(w http.ResponseWriter, r *http.Request) {

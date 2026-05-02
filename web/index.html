@@ -428,6 +428,17 @@ async function loadLocalInfo() {
     } catch (e) {}
   }
 
+  // If on Android and name is "localhost", push real name to Go backend
+  if (name && name !== 'localhost' && name !== 'Android') {
+    try {
+      await fetch('/api/set-device-name', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: name})
+      });
+    } catch (e) {}
+  }
+
   const displayIP = ip ? ip + (port ? ':' + port : '') : 'unknown';
   document.getElementById('localInfo').innerHTML =
     '本机: <strong>' + escHtml(name || 'Android') + '</strong> · ' +
@@ -458,7 +469,7 @@ function renderDevices() {
   }
 
   if (state.devices.length === 0) {
-    html = '<div class="empty-state">未发现设备<br><small>在另一台设备上运行 FasentNeo，或在上方添加远程设备</small></div>';
+    html = '<div class="empty-state">未发现设备<br><small>请确保两台设备连接同一 WiFi<br>如仍无法发现，请在上方手动添加远程设备</small></div>';
   }
 
   el.innerHTML = html;
@@ -507,7 +518,9 @@ async function addRemoteDevice() {
     });
     const data = await resp.json();
     if (data.error) { toast('添加失败: ' + data.error, 'error'); return; }
-    toast('已添加远程设备: ' + name, 'success');
+    // Auto-select the newly added device
+    state.selectedDeviceId = data.id;
+    toast('已添加并选中设备: ' + name, 'success');
     document.getElementById('remoteName').value = '';
     document.getElementById('remoteIP').value = '';
     document.getElementById('remotePort').value = '54322';

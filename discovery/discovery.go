@@ -58,7 +58,16 @@ func (s *Service) Start() error {
 	var err error
 	s.conn, err = net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: broadcastPort})
 	if err != nil {
-		return fmt.Errorf("failed to listen on UDP %d: %w", broadcastPort, err)
+		// Fallback to dual-stack (needed on some Android devices)
+		s.conn, err = net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: broadcastPort})
+		if err != nil {
+			return fmt.Errorf("failed to listen on UDP %d: %w", broadcastPort, err)
+		}
+	}
+
+	if err := enableBroadcast(s.conn); err != nil {
+		s.conn.Close()
+		return fmt.Errorf("failed to enable broadcast: %w", err)
 	}
 
 	s.conn.SetReadBuffer(65536)
@@ -105,6 +114,12 @@ func (s *Service) GetDevices() []*Device {
 func (s *Service) ID() string       { return s.id }
 func (s *Service) Port() int     { return s.port }
 func (s *Service) Name() string  { return s.name }
+
+func (s *Service) SetName(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.name = name
+}
 
 func (s *Service) AddManualDevice(name, ip string, port int) string {
 	s.mu.Lock()
@@ -186,10 +201,14 @@ func (s *Service) broadcast(data []byte) {
 			sent[bcastStr] = true
 
 			dst := &net.UDPAddr{IP: bcast, Port: broadcastPort}
-			s.conn.WriteToUDP(data, dst)
+			if _, err := s.conn.WriteToUDP(data, dst); err != nil {
+				// Log and continue - some interfaces may fail
+				continue
+			}
 		}
 	}
 
+	// Always try 255.255.255.255 as fallback
 	dst := &net.UDPAddr{IP: net.IPv4bcast, Port: broadcastPort}
 	if !sent[dst.IP.String()] {
 		s.conn.WriteToUDP(data, dst)

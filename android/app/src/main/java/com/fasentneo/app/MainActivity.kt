@@ -2,18 +2,26 @@ package com.fasentneo.app
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
+import android.database.Cursor
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.OpenableColumns
 import android.util.Log
 import android.webkit.JavascriptInterface
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import java.io.File
+import java.io.FileOutputStream
 
 class MainActivity : AppCompatActivity() {
 
@@ -21,6 +29,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private val handler = Handler(Looper.getMainLooper())
     private var connectRetries = 0
+
+    private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+    private lateinit var filePickerLauncher: ActivityResultLauncher<Intent>
 
     companion object {
         private const val TAG = "FasentNeo"
@@ -59,6 +70,19 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Register file picker launcher
+        filePickerLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            val results = result.data?.let { data ->
+                data.clipData?.let { clipData ->
+                    (0 until clipData.itemCount).map { clipData.getItemAt(it).uri }.toTypedArray()
+                } ?: data.data?.let { uri -> arrayOf(uri) }
+            }
+            fileChooserCallback?.onReceiveValue(results)
+            fileChooserCallback = null
+        }
+
         webView = WebView(this).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -67,7 +91,28 @@ class MainActivity : AppCompatActivity() {
             settings.setGeolocationEnabled(false)
             settings.mediaPlaybackRequiresUserGesture = false
             webViewClient = WebViewClient()
-            webChromeClient = WebChromeClient()
+            webChromeClient = object : WebChromeClient() {
+                override fun onShowFileChooser(
+                    webView: WebView?,
+                    filePathCallback: ValueCallback<Array<Uri>>?,
+                    fileChooserParams: FileChooserParams?
+                ): Boolean {
+                    fileChooserCallback = filePathCallback
+                    val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    }
+                    try {
+                        filePickerLauncher.launch(Intent.createChooser(intent, "选择文件"))
+                    } catch (e: Exception) {
+                        fileChooserCallback?.onReceiveValue(null)
+                        fileChooserCallback = null
+                        return false
+                    }
+                    return true
+                }
+            }
             addJavascriptInterface(DeviceInfoInterface(), "AndroidDevice")
         }
         setContentView(webView)
