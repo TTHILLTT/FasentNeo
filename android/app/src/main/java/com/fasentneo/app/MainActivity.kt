@@ -1,10 +1,14 @@
 package com.fasentneo.app
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -25,6 +29,33 @@ class MainActivity : AppCompatActivity() {
         private const val RETRY_DELAY_MS = 500L
     }
 
+    inner class DeviceInfoInterface {
+        @JavascriptInterface
+        fun getDeviceInfo(): String {
+            val model = Build.MODEL ?: "Android"
+            val ip = getWifiIP()
+            return """{"name":"$model","ip":"$ip"}"""
+        }
+
+        private fun getWifiIP(): String {
+            try {
+                val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                val ipInt = wifiManager.connectionInfo.ipAddress
+                if (ipInt != 0) {
+                    return String.format("%d.%d.%d.%d",
+                        ipInt and 0xff,
+                        ipInt shr 8 and 0xff,
+                        ipInt shr 16 and 0xff,
+                        ipInt shr 24 and 0xff
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to get WiFi IP", e)
+            }
+            return ""
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -37,6 +68,7 @@ class MainActivity : AppCompatActivity() {
             settings.mediaPlaybackRequiresUserGesture = false
             webViewClient = WebViewClient()
             webChromeClient = WebChromeClient()
+            addJavascriptInterface(DeviceInfoInterface(), "AndroidDevice")
         }
         setContentView(webView)
 
@@ -47,7 +79,6 @@ class MainActivity : AppCompatActivity() {
     private fun startServer() {
         Thread {
             try {
-                // The Go binary is bundled as a "native library" so it lands in nativeLibraryDir
                 val nativeLibDir = applicationInfo.nativeLibraryDir
                 val goBinary = File(nativeLibDir, "libfasentneo.so")
 
@@ -57,10 +88,8 @@ class MainActivity : AppCompatActivity() {
                     return@Thread
                 }
 
-                // Make it executable (should already be, but ensure)
                 goBinary.setExecutable(true, false)
 
-                // Set HOME for the Go process so it can find Downloads dir
                 val env = mapOf(
                     "HOME" to filesDir.absolutePath,
                     "TMPDIR" to cacheDir.absolutePath
@@ -74,7 +103,6 @@ class MainActivity : AppCompatActivity() {
 
                 serverProcess = pb.start()
 
-                // Log server output
                 serverProcess?.inputStream?.bufferedReader()?.use { reader ->
                     reader.lines().forEach { line ->
                         Log.i(TAG, line)
@@ -98,7 +126,6 @@ class MainActivity : AppCompatActivity() {
                     conn.connect()
                     conn.getInputStream().close()
 
-                    // Server is ready, load WebView
                     handler.post {
                         webView.loadUrl(url)
                     }

@@ -358,15 +358,28 @@ func writeJSON(w http.ResponseWriter, data interface{}) {
 
 func getLocalIPs() []string {
 	var ips []string
+
+	// Method 1: enumerate interfaces (works on desktop)
 	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return []string{"unknown"}
-	}
-	for _, addr := range addrs {
-		if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() && ipNet.IP.To4() != nil {
-			ips = append(ips, ipNet.IP.String())
+	if err == nil {
+		for _, addr := range addrs {
+			if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() && ipNet.IP.To4() != nil {
+				ips = append(ips, ipNet.IP.String())
+			}
 		}
 	}
+
+	// Method 2: UDP dial trick (works on Android, gets primary IP)
+	if len(ips) == 0 {
+		conn, err := net.Dial("udp", "8.8.8.8:53")
+		if err == nil {
+			if udpAddr, ok := conn.LocalAddr().(*net.UDPAddr); ok && udpAddr.IP != nil {
+				ips = append(ips, udpAddr.IP.String())
+			}
+			conn.Close()
+		}
+	}
+
 	if len(ips) == 0 {
 		ips = append(ips, "127.0.0.1")
 	}

@@ -402,12 +402,38 @@ evtSource.addEventListener('message', (e) => {
 });
 
 // Load local device info
-fetch('/api/info').then(r => r.json()).then(info => {
-  const ipList = (info.ips||[]).map(ip => ip + ':' + info.port).join(', ');
+async function loadLocalInfo() {
+  let name = '';
+  let ip = '';
+  let port = '';
+
+  // Try Go backend /api/info first
+  try {
+    const resp = await fetch('/api/info');
+    const info = await resp.json();
+    name = info.name || '';
+    port = info.port || '';
+    const ips = info.ips || [];
+    if (ips.length > 0 && ips[0] !== '127.0.0.1') {
+      ip = ips[0];
+    }
+  } catch (e) {}
+
+  // Fallback to Android JavaScript bridge
+  if ((!ip || ip === '127.0.0.1') && typeof window.AndroidDevice !== 'undefined') {
+    try {
+      const androidInfo = JSON.parse(window.AndroidDevice.getDeviceInfo());
+      if (androidInfo.name) name = androidInfo.name;
+      if (androidInfo.ip) ip = androidInfo.ip;
+    } catch (e) {}
+  }
+
+  const displayIP = ip ? ip + (port ? ':' + port : '') : 'unknown';
   document.getElementById('localInfo').innerHTML =
-    '本机: <strong>' + escHtml(info.name) + '</strong> · ' +
-    '传输地址: <code>' + escHtml(ipList || 'unknown') + '</code>';
-});
+    '本机: <strong>' + escHtml(name || 'Android') + '</strong> · ' +
+    '传输地址: <code>' + escHtml(displayIP) + '</code>';
+}
+loadLocalInfo();
 
 // Device rendering
 function renderDevices() {
