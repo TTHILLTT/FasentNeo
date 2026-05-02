@@ -30,8 +30,13 @@ func main() {
 	hostname, _ := os.Hostname()
 
 	// Set up directories
-	homeDir, _ := os.UserHomeDir()
-	downloadDir := filepath.Join(homeDir, "Downloads", "FasentNeo")
+	downloadDir := os.Getenv("DOWNLOAD_DIR")
+	if downloadDir == "" {
+		homeDir, _ := os.UserHomeDir()
+		downloadDir = filepath.Join(homeDir, "Downloads", "FasentNeo")
+	} else {
+		downloadDir = filepath.Join(downloadDir, "FasentNeo")
+	}
 	uploadsDir := filepath.Join(os.TempDir(), "FasentNeoUploads")
 
 	log.SetFlags(log.Ltime)
@@ -73,7 +78,7 @@ func main() {
 	if len(localIPs) > 0 {
 		log.Printf("Access from other devices: http://%s:%d", localIPs[0], httpPort)
 	}
-	log.Printf("Downloads saved to: %s", downloadDir)
+	log.Printf("Received files saved to: %s", downloadDir)
 	log.Println("Press Ctrl+C to exit")
 
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", httpPort), handler); err != nil {

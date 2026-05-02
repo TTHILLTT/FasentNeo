@@ -135,9 +135,13 @@ class MainActivity : AppCompatActivity() {
 
                 goBinary.setExecutable(true, false)
 
+                // Use external files dir for downloads so user can find received files
+                val dlDir = getExternalFilesDir(null)?.absolutePath
+                    ?: File(filesDir, "Downloads").absolutePath
                 val env = mapOf(
                     "HOME" to filesDir.absolutePath,
-                    "TMPDIR" to cacheDir.absolutePath
+                    "TMPDIR" to cacheDir.absolutePath,
+                    "DOWNLOAD_DIR" to dlDir
                 )
 
                 val pb = ProcessBuilder(goBinary.absolutePath)
