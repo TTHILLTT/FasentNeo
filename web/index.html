@@ -278,15 +278,6 @@ main {
 }
 .progress-bar .fill.complete { background: var(--success); }
 .progress-bar .fill.error { background: var(--error); }
-.download-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  background: var(--surface2);
-  border-radius: 6px;
-  font-size: 0.85em;
-}
 .hidden-file { display: none; }
 .toast-container {
   position: fixed;
@@ -308,6 +299,77 @@ main {
 .toast.info { background: var(--accent); color: white; }
 .toast.success { background: var(--success); color: white; }
 @keyframes slideIn { from{transform:translateX(100%);opacity:0} to{transform:translateX(0);opacity:1} }
+
+/* Modal */
+.modal-overlay {
+  position: fixed; top:0; left:0; right:0; bottom:0;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200;
+  animation: fadeIn 0.2s;
+}
+@keyframes fadeIn { from{opacity:0} to{opacity:1} }
+.modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  width: 90%; max-width: 480px;
+  max-height: 70vh;
+  display: flex; flex-direction: column;
+}
+.modal-box h3 {
+  font-size: 1em;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+.modal-device-list {
+  flex: 1; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 6px;
+  margin-bottom: 16px;
+}
+.modal-device-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface2);
+  border-radius: 6px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.15s;
+}
+.modal-device-item:hover { border-color: var(--border); }
+.modal-device-item.checked { border-color: var(--accent); background: rgba(91,138,247,0.1); }
+.modal-device-item input[type=checkbox] {
+  width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0;
+}
+.modal-device-item .info { flex:1; min-width:0; }
+.modal-device-item .name { font-weight: 600; font-size: 0.9em; }
+.modal-device-item .ip { font-size: 0.75em; color: var(--text2); }
+.modal-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.modal-actions .btn {
+  padding: 8px 20px; font-size: 0.85em;
+}
+.btn-cancel { background: var(--surface2); color: var(--text); }
+.btn-confirm { background: var(--accent); color: white; }
+.btn-confirm:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-all { background: transparent; color: var(--accent); border: none; font-size: 0.78em; cursor: pointer; padding: 2px 8px; }
+
+/* Download item clickable */
+.download-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--surface2);
+  border-radius: 6px;
+  font-size: 0.85em;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+.download-item:hover { border-color: var(--accent); }
+.download-item .dl-icon { margin-left: 8px; opacity: 0.5; font-size: 0.9em; }
+.download-item:hover .dl-icon { opacity: 1; }
 </style>
 </head>
 <body>
@@ -373,12 +435,28 @@ main {
 
 <div class="toast-container" id="toastContainer"></div>
 
+<!-- Send device selector modal -->
+<div class="modal-overlay" id="sendModal" style="display:none">
+  <div class="modal-box">
+    <h3>选择发送目标设备</h3>
+    <div style="margin-bottom:10px">
+      <button class="btn-all" onclick="toggleAllDevices(true)">全选</button>
+      <button class="btn-all" onclick="toggleAllDevices(false)">取消全选</button>
+    </div>
+    <div class="modal-device-list" id="modalDeviceList"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeSendModal()">取消</button>
+      <button class="btn btn-confirm" id="modalConfirmBtn" disabled onclick="confirmSend()">发送</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const state = {
   devices: [],
-  selectedDeviceId: null,
   files: [],
   transfers: {},
+  modalCheckedIds: new Set(),
 };
 
 // SSE connection for real-time updates
@@ -477,7 +555,6 @@ function renderDevices() {
 }
 
 function deviceHTML(d, type) {
-  const sel = state.selectedDeviceId === d.id ? ' selected' : '';
   const avatarCls = type === 'remote' ? ' remote' : '';
   const tagHTML = type === 'remote'
     ? '<span class="tag remote">远程</span>'
@@ -486,7 +563,7 @@ function deviceHTML(d, type) {
     ? '<button class="delete-btn" onclick="event.stopPropagation();removeRemoteDevice(\'' + d.id + '\')" title="删除">×</button>'
     : '';
   return `
-    <div class="device-item${sel}" onclick="selectDevice('${d.id}')">
+    <div class="device-item">
       <div class="avatar${avatarCls}">${(d.name||'?')[0].toUpperCase()}</div>
       <div class="info">
         <div class="name">${escHtml(d.name)} ${tagHTML}</div>
@@ -495,11 +572,6 @@ function deviceHTML(d, type) {
       ${deleteHTML}
     </div>
   `;
-}
-
-function selectDevice(id) {
-  state.selectedDeviceId = id;
-  renderDevices();
 }
 
 // Add remote device
@@ -518,9 +590,7 @@ async function addRemoteDevice() {
     });
     const data = await resp.json();
     if (data.error) { toast('添加失败: ' + data.error, 'error'); return; }
-    // Auto-select the newly added device
-    state.selectedDeviceId = data.id;
-    toast('已添加并选中设备: ' + name, 'success');
+    toast('已添加设备: ' + name, 'success');
     document.getElementById('remoteName').value = '';
     document.getElementById('remoteIP').value = '';
     document.getElementById('remotePort').value = '54322';
@@ -533,7 +603,7 @@ async function addRemoteDevice() {
 async function removeRemoteDevice(id) {
   try {
     await fetch('/api/devices?id=' + encodeURIComponent(id), { method: 'DELETE' });
-    if (state.selectedDeviceId === id) state.selectedDeviceId = null;
+    state.modalCheckedIds.delete(id);
     toast('已移除远程设备', 'info');
   } catch (err) {
     toast('移除失败: ' + err.message, 'error');
@@ -597,24 +667,97 @@ function removeFile(i) { state.files.splice(i, 1); renderFiles(); }
 
 function updateSendBtn() {
   const btn = document.getElementById('sendBtn');
-  if (state.selectedDeviceId && state.files.length > 0) {
+  if (state.files.length > 0 && state.devices.length > 0) {
     btn.disabled = false;
-    const device = state.devices.find(d => d.id === state.selectedDeviceId);
-    btn.textContent = '发送到 ' + (device ? device.name : '...');
+    btn.textContent = '发送 ' + state.files.length + ' 个文件 (选择设备)';
+  } else if (state.files.length > 0) {
+    btn.disabled = true;
+    btn.textContent = '无可用设备';
   } else {
     btn.disabled = true;
-    btn.textContent = '选择设备并发送';
+    btn.textContent = '选择文件并发送';
   }
 }
 
-document.getElementById('sendBtn').addEventListener('click', async () => {
-  if (!state.selectedDeviceId || state.files.length === 0) return;
+// Send button opens modal
+document.getElementById('sendBtn').addEventListener('click', () => {
+  if (state.files.length === 0 || state.devices.length === 0) return;
+  openSendModal();
+});
+
+// --- Modal ---
+function openSendModal() {
+  state.modalCheckedIds.clear();
+  // Pre-check all devices by default
+  for (const d of state.devices) {
+    state.modalCheckedIds.add(d.id);
+  }
+  renderModalDevices();
+  document.getElementById('sendModal').style.display = 'flex';
+}
+
+function closeSendModal() {
+  document.getElementById('sendModal').style.display = 'none';
+}
+
+function toggleAllDevices(check) {
+  state.modalCheckedIds.clear();
+  if (check) {
+    for (const d of state.devices) state.modalCheckedIds.add(d.id);
+  }
+  renderModalDevices();
+}
+
+function toggleDeviceInModal(id) {
+  if (state.modalCheckedIds.has(id)) {
+    state.modalCheckedIds.delete(id);
+  } else {
+    state.modalCheckedIds.add(id);
+  }
+  renderModalDevices();
+}
+
+function renderModalDevices() {
+  const el = document.getElementById('modalDeviceList');
+  const confirmBtn = document.getElementById('modalConfirmBtn');
+
+  if (state.devices.length === 0) {
+    el.innerHTML = '<div class="empty-state">没有可用设备</div>';
+    confirmBtn.disabled = true;
+    return;
+  }
+
+  el.innerHTML = state.devices.map(d => {
+    const checked = state.modalCheckedIds.has(d.id);
+    const tag = d.manual
+      ? '<span class="tag remote">远程</span>'
+      : '<span class="tag lan">局域网</span>';
+    return `
+      <div class="modal-device-item${checked ? ' checked' : ''}" onclick="toggleDeviceInModal('${d.id}')">
+        <input type="checkbox" ${checked ? 'checked' : ''} onclick="event.stopPropagation(); toggleDeviceInModal('${d.id}')">
+        <div class="info">
+          <div class="name">${escHtml(d.name)} ${tag}</div>
+          <div class="ip">${escHtml(d.ip)}:${d.port}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  confirmBtn.disabled = state.modalCheckedIds.size === 0;
+  confirmBtn.textContent = '发送 (' + state.files.length + ' 个文件 → ' + state.modalCheckedIds.size + ' 个设备)';
+}
+
+async function confirmSend() {
+  if (state.modalCheckedIds.size === 0 || state.files.length === 0) return;
+
+  closeSendModal();
   const btn = document.getElementById('sendBtn');
   btn.disabled = true;
   btn.textContent = '发送中...';
 
+  const targetIds = Array.from(state.modalCheckedIds).join(',');
   const formData = new FormData();
-  formData.append('targetId', state.selectedDeviceId);
+  formData.append('targetIds', targetIds);
   for (const f of state.files) {
     formData.append('files', f);
   }
@@ -625,7 +768,9 @@ document.getElementById('sendBtn').addEventListener('click', async () => {
     if (data.error) {
       toast('发送失败: ' + data.error, 'error');
     } else {
-      toast('已开始发送 ' + state.files.length + ' 个文件', 'info');
+      const count = state.files.length;
+      const targets = state.modalCheckedIds.size;
+      toast('已开始发送 ' + count + ' 个文件到 ' + targets + ' 个设备', 'success');
       state.files = [];
       renderFiles();
     }
@@ -634,6 +779,11 @@ document.getElementById('sendBtn').addEventListener('click', async () => {
   }
   btn.disabled = false;
   updateSendBtn();
+}
+
+// Close modal on overlay click
+document.getElementById('sendModal').addEventListener('click', function(e) {
+  if (e.target === this) closeSendModal();
 });
 
 // Transfers
@@ -681,13 +831,35 @@ async function loadDownloads() {
       return;
     }
     el.innerHTML = data.map(d => `
-      <div class="download-item">
+      <div class="download-item" data-filename="${escHtml(d.name)}" onclick="openFileLocation(this.dataset.filename)" title="点击在文件管理器中显示">
         <span>${escHtml(d.name)}</span>
-        <span style="color:var(--text2)">${formatSize(d.size)} · ${new Date(d.mod_time).toLocaleString()}</span>
+        <span style="display:flex;align-items:center;gap:8px;color:var(--text2)">
+          ${formatSize(d.size)} · ${new Date(d.mod_time).toLocaleString()}
+          <span class="dl-icon">📂</span>
+        </span>
       </div>
     `).join('');
   } catch {}
 }
+
+async function openFileLocation(name) {
+  try {
+    const resp = await fetch('/api/open-file', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: name})
+    });
+    const data = await resp.json();
+    if (data.error) {
+      toast(data.error, 'error');
+    } else if (data.path) {
+      toast('文件位置: ' + data.path, 'info');
+    }
+  } catch (err) {
+    toast('操作失败: ' + err.message, 'error');
+  }
+}
+
 loadDownloads();
 setInterval(loadDownloads, 5000);
 

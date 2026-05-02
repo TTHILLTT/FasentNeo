@@ -10,7 +10,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,10 +29,6 @@ type Handler struct {
 	wsClients   map[chan []byte]struct{}
 	wsMu        sync.Mutex
 	uploadsDir  string
-}
-
-type sendRequest struct {
-	TargetID string `json:"targetId"`
 }
 
 type wsMessage struct {
@@ -53,6 +52,7 @@ func NewHandler(d *discovery.Service, t *transfer.Manager, web embed.FS, uploads
 	h.mux.HandleFunc("/api/set-device-name", h.handleSetDeviceName)
 	h.mux.HandleFunc("/api/downloads", h.handleDownloads)
 	h.mux.HandleFunc("/api/send", h.handleSend)
+	h.mux.HandleFunc("/api/open-file", h.handleOpenFile)
 	h.mux.HandleFunc("/ws", h.handleWebSocket)
 
 	// Serve embedded web files (strip "web/" prefix)
@@ -213,27 +213,31 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetID := r.FormValue("targetId")
-	if targetID == "" {
-		writeJSON(w, map[string]string{"error": "targetId is required"})
+	targetIDsStr := r.FormValue("targetIds")
+	if targetIDsStr == "" {
+		writeJSON(w, map[string]string{"error": "targetIds is required"})
 		return
 	}
+	targetIDs := strings.Split(targetIDsStr, ",")
 
-	// Find target device
+	// Find all target devices
 	devices := h.discovery.GetDevices()
-	var target *discovery.Device
-	for _, d := range devices {
-		if d.ID == targetID {
-			target = d
-			break
+	var targets []*discovery.Device
+	for _, tid := range targetIDs {
+		tid = strings.TrimSpace(tid)
+		for _, d := range devices {
+			if d.ID == tid {
+				targets = append(targets, d)
+				break
+			}
 		}
 	}
-	if target == nil {
-		writeJSON(w, map[string]string{"error": "target device not found"})
+	if len(targets) == 0 {
+		writeJSON(w, map[string]string{"error": "no target devices found"})
 		return
 	}
 
-	// Process uploaded files
+	// Process uploaded files and send to all targets
 	var results []map[string]interface{}
 	for _, fileHeaders := range r.MultipartForm.File {
 		for _, fh := range fileHeaders {
@@ -247,7 +251,7 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			// Save to temp file
+			// Save to temp file (one copy shared across all targets)
 			tmpPath := filepath.Join(h.uploadsDir, fh.Filename)
 			dst, err := os.Create(tmpPath)
 			if err != nil {
@@ -273,24 +277,79 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 			dst.Close()
 			src.Close()
 
-			// Send file to target
-			go func(targetIP string, targetPort int, filePath, fileName string) {
-				_, err := h.transfer.SendFile(targetIP, targetPort, filePath)
-				if err != nil {
-					log.Printf("send error: %v", err)
-				}
-				// Clean up temp file
+			// Send to each target (re-read file for each to avoid race)
+			for _, target := range targets {
+				go func(targetIP string, targetPort int, targetName, filePath, fileName string) {
+					if _, err := h.transfer.SendFile(targetIP, targetPort, filePath); err != nil {
+						log.Printf("send to %s error: %v", targetName, err)
+					}
+				}(target.IP, target.Port, target.Name, tmpPath, fh.Filename)
+			}
+
+			// Clean up temp file after a delay (worst case: all sends complete in background)
+			go func(filePath string) {
+				time.Sleep(5 * time.Minute)
 				os.Remove(filePath)
-			}(target.IP, target.Port, tmpPath, fh.Filename)
+			}(tmpPath)
 
 			results = append(results, map[string]interface{}{
-				"name":   fh.Filename,
-				"status": "sending",
+				"name":    fh.Filename,
+				"status":  "sending",
+				"targets": len(targets),
 			})
 		}
 	}
 
-	writeJSON(w, map[string]interface{}{"results": results})
+	writeJSON(w, map[string]interface{}{
+		"results":   results,
+		"targetIds": targetIDs,
+	})
+}
+
+func (h *Handler) handleOpenFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		writeJSON(w, map[string]string{"error": "name is required"})
+		return
+	}
+
+	downloadDir := h.transfer.GetDownloadDir()
+	fullPath := filepath.Join(downloadDir, filepath.Base(req.Name))
+
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		writeJSON(w, map[string]string{"error": "file not found: " + req.Name})
+		return
+	}
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("explorer", "/select,", fullPath)
+	case "darwin":
+		cmd = exec.Command("open", "-R", fullPath)
+	case "linux":
+		// xdg-open opens the file; most file managers support selecting
+		// Try opening the containing directory as fallback
+		cmd = exec.Command("xdg-open", filepath.Dir(fullPath))
+	default:
+		writeJSON(w, map[string]string{"error": "unsupported platform"})
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		log.Printf("open-file error: %v", err)
+		writeJSON(w, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "ok", "path": fullPath})
 }
 
 func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
