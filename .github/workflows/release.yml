@@ -77,13 +77,13 @@ jobs:
       - name: Build APK
         run: |
           cd android
-          ./gradlew assembleRelease
+          ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: fasentneo-android-apk
-          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
 
   release:
     needs: [build-binaries, build-apk]
@@ -93,9 +93,9 @@ jobs:
         with:
           path: dist
 
-      - name: Rename APK
+      - name: Rename artifacts
         run: |
-          find dist -name "*.apk" -exec mv {} dist/fasentneo-android-arm64.apk \; 2>/dev/null || true
+          mv dist/fasentneo-android-apk/*.apk dist/fasentneo-android-arm64.apk 2>/dev/null || true
           find dist -type f | sort
 
       - name: Create Release
