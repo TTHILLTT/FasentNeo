@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FasentNeo - Fast File Transfer</title>
+<style>
+:root {
+  --bg: #0f0f14;
+  --surface: #1a1a24;
+  --surface2: #242436;
+  --border: #2a2a3e;
+  --text: #e0e0e8;
+  --text2: #9898b0;
+  --accent: #5b8af7;
+  --accent2: #7c5bf7;
+  --success: #4caf93;
+  --error: #f75b6e;
+  --warning: #f7b55b;
+  --radius: 10px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.2em;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+.logo .icon { width:32px; height:32px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: 8px; display:flex; align-items:center; justify-content:center; font-size:18px; }
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85em;
+  color: var(--text2);
+}
+.status-dot { width:8px; height:8px; border-radius:50%; background: var(--success); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto;
+  gap: 16px;
+}
+@media (max-width: 768px) { main { grid-template-columns: 1fr; } }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+.card h2 {
+  font-size: 0.95em;
+  font-weight: 600;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 14px;
+}
+.full-width { grid-column: 1 / -1; }
+.device-list { display: flex; flex-direction: column; gap: 8px; min-height: 40px; }
+.device-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface2);
+  border-radius: var(--radius);
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.15s;
+  position: relative;
+}
+.device-item:hover { border-color: var(--accent); }
+.device-item.selected { border-color: var(--accent); background: rgba(91,138,247,0.1); }
+.device-item .avatar {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.device-item .avatar.remote { background: linear-gradient(135deg, var(--success), #2ea87a); }
+.device-item .info { flex:1; min-width:0; }
+.device-item .name { font-weight: 600; font-size: 0.95em; }
+.device-item .ip { font-size: 0.78em; color: var(--text2); margin-top: 2px; }
+.device-item .tag {
+  font-size: 0.7em;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-weight: 600;
+  display: inline-block;
+  margin-left: 6px;
+}
+.tag.lan { background: rgba(91,138,247,0.2); color: var(--accent); }
+.tag.remote { background: rgba(76,175,147,0.2); color: var(--success); }
+.device-item .delete-btn {
+  position: absolute;
+  top: 6px; right: 8px;
+  background: none; border: none;
+  color: var(--text2); cursor: pointer;
+  font-size: 1.1em; padding: 2px 6px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: all 0.15s;
+}
+.device-item:hover .delete-btn { opacity: 1; }
+.device-item .delete-btn:hover { color: var(--error); background: rgba(247,91,110,0.15); }
+.section-label {
+  font-size: 0.72em;
+  font-weight: 700;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin: 12px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.section-label:first-child { margin-top: 0; }
+.add-remote-form {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.add-remote-form input {
+  flex: 1;
+  min-width: 80px;
+  padding: 8px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.82em;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.add-remote-form input:focus { border-color: var(--accent); }
+.add-remote-form input.port-input { flex: 0 0 70px; min-width: 60px; }
+.btn-sm {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.82em;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--success);
+  color: white;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.btn-sm:hover { opacity: 0.85; }
+.local-info {
+  font-size: 0.78em;
+  color: var(--text2);
+  margin-bottom: 12px;
+  background: var(--surface2);
+  padding: 10px 14px;
+  border-radius: 6px;
+  line-height: 1.6;
+}
+.local-info code {
+  background: rgba(91,138,247,0.15);
+  color: var(--accent);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 0.95em;
+}
+.empty-state {
+  text-align: center;
+  color: var(--text2);
+  padding: 20px;
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 40px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(91,138,247,0.05);
+}
+.drop-zone .dz-icon { font-size: 40px; opacity: 0.7; }
+.drop-zone .dz-text { font-size: 0.95em; color: var(--text2); }
+.drop-zone .dz-hint { font-size: 0.78em; color: var(--text2); opacity: 0.6; }
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--surface2);
+  border-radius: 6px;
+  font-size: 0.85em;
+}
+.file-item .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.file-item .size { color: var(--text2); margin-left: 10px; flex-shrink: 0; }
+.file-item .remove { cursor:pointer; color: var(--error); margin-left: 8px; font-weight: bold; flex-shrink: 0; }
+.btn {
+  padding: 10px 24px;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 0.9em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-primary { background: var(--accent); color: white; width: 100%; justify-content: center; margin-top: 12px; }
+.btn-primary:hover { background: #4a7ae6; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.transfer-list { display: flex; flex-direction: column; gap: 8px; }
+.transfer-item { padding: 12px; background: var(--surface2); border-radius: var(--radius); }
+.transfer-item .meta { display: flex; justify-content: space-between; font-size: 0.85em; margin-bottom: 6px; }
+.transfer-item .tname { font-weight: 600; }
+.transfer-item .tstatus { font-size: 0.8em; }
+.progress-bar {
+  width: 100%; height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.progress-bar .fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+.progress-bar .fill.complete { background: var(--success); }
+.progress-bar .fill.error { background: var(--error); }
+.download-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--surface2);
+  border-radius: 6px;
+  font-size: 0.85em;
+}
+.hidden-file { display: none; }
+.toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.toast {
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  font-size: 0.85em;
+  font-weight: 500;
+  animation: slideIn 0.3s;
+  max-width: 350px;
+}
+.toast.info { background: var(--accent); color: white; }
+.toast.success { background: var(--success); color: white; }
+@keyframes slideIn { from{transform:translateX(100%);opacity:0} to{transform:translateX(0);opacity:1} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="icon">⚡</div>
+    <span>FasentNeo</span>
+  </div>
+  <div class="status">
+    <div class="status-dot"></div>
+    <span id="statusText">在线</span>
+    <span style="margin-left:8px" id="deviceCount"></span>
+  </div>
+</header>
+
+<main>
+  <!-- Devices -->
+  <div class="card">
+    <h2>设备列表</h2>
+    <div class="local-info" id="localInfo">加载中...</div>
+    <div class="add-remote-form">
+      <input type="text" id="remoteName" placeholder="设备名称 (如: 办公室PC)" maxlength="30">
+      <input type="text" id="remoteIP" placeholder="IP 或域名" maxlength="100">
+      <input type="number" id="remotePort" placeholder="端口" value="54322" class="port-input" min="1" max="65535">
+      <button class="btn-sm" onclick="addRemoteDevice()">添加</button>
+    </div>
+    <div class="device-list" id="deviceList">
+      <div class="empty-state">正在搜索局域网设备...</div>
+    </div>
+  </div>
+
+  <!-- Send Files -->
+  <div class="card">
+    <h2>发送文件</h2>
+    <div class="drop-zone" id="dropZone">
+      <div class="dz-icon">📁</div>
+      <div class="dz-text">拖拽文件到此处</div>
+      <div class="dz-hint">或点击选择文件</div>
+    </div>
+    <input type="file" id="fileInput" class="hidden-file" multiple>
+    <div class="file-list" id="fileList"></div>
+    <div style="margin-top:4px;font-size:0.8em;color:var(--text2)" id="totalSize"></div>
+    <button class="btn btn-primary" id="sendBtn" disabled>选择设备并发送</button>
+  </div>
+
+  <!-- Transfers -->
+  <div class="card full-width">
+    <h2>传输进度</h2>
+    <div class="transfer-list" id="transferList">
+      <div class="empty-state">暂无传输任务</div>
+    </div>
+  </div>
+
+  <!-- Downloads -->
+  <div class="card full-width">
+    <h2>已接收文件</h2>
+    <div class="device-list" id="downloadList">
+      <div class="empty-state">暂无接收文件</div>
+    </div>
+  </div>
+</main>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+const state = {
+  devices: [],
+  selectedDeviceId: null,
+  files: [],
+  transfers: {},
+};
+
+// SSE connection for real-time updates
+const evtSource = new EventSource('/ws');
+evtSource.addEventListener('message', (e) => {
+  try {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'devices') {
+      state.devices = JSON.parse(msg.data);
+      renderDevices();
+    } else if (msg.type === 'progress') {
+      const p = JSON.parse(msg.data);
+      state.transfers[p.id] = p;
+      renderTransfers();
+      if (p.status === 'complete' && p.direction === 'receive') {
+        loadDownloads();
+        toast('文件接收完成: ' + p.name, 'success');
+      }
+    }
+  } catch {}
+});
+
+// Load local device info
+fetch('/api/info').then(r => r.json()).then(info => {
+  const ipList = (info.ips||[]).map(ip => ip + ':' + info.port).join(', ');
+  document.getElementById('localInfo').innerHTML =
+    '本机: <strong>' + escHtml(info.name) + '</strong> · ' +
+    '传输地址: <code>' + escHtml(ipList || 'unknown') + '</code>';
+});
+
+// Device rendering
+function renderDevices() {
+  const el = document.getElementById('deviceList');
+  const lan = state.devices.filter(d => !d.manual);
+  const remote = state.devices.filter(d => d.manual);
+
+  document.getElementById('deviceCount').textContent = state.devices.length + ' 个设备';
+
+  let html = '';
+
+  // LAN devices
+  if (lan.length > 0) {
+    html += '<div class="section-label">🏠 局域网设备</div>';
+    html += lan.map(d => deviceHTML(d, 'lan')).join('');
+  }
+
+  // Remote/manual devices
+  if (remote.length > 0) {
+    html += '<div class="section-label">🌐 远程设备</div>';
+    html += remote.map(d => deviceHTML(d, 'remote')).join('');
+  }
+
+  if (state.devices.length === 0) {
+    html = '<div class="empty-state">未发现设备<br><small>在另一台设备上运行 FasentNeo，或在上方添加远程设备</small></div>';
+  }
+
+  el.innerHTML = html;
+  updateSendBtn();
+}
+
+function deviceHTML(d, type) {
+  const sel = state.selectedDeviceId === d.id ? ' selected' : '';
+  const avatarCls = type === 'remote' ? ' remote' : '';
+  const tagHTML = type === 'remote'
+    ? '<span class="tag remote">远程</span>'
+    : '<span class="tag lan">局域网</span>';
+  const deleteHTML = d.manual
+    ? '<button class="delete-btn" onclick="event.stopPropagation();removeRemoteDevice(\'' + d.id + '\')" title="删除">×</button>'
+    : '';
+  return `
+    <div class="device-item${sel}" onclick="selectDevice('${d.id}')">
+      <div class="avatar${avatarCls}">${(d.name||'?')[0].toUpperCase()}</div>
+      <div class="info">
+        <div class="name">${escHtml(d.name)} ${tagHTML}</div>
+        <div class="ip">${escHtml(d.ip)}:${d.port}</div>
+      </div>
+      ${deleteHTML}
+    </div>
+  `;
+}
+
+function selectDevice(id) {
+  state.selectedDeviceId = id;
+  renderDevices();
+}
+
+// Add remote device
+async function addRemoteDevice() {
+  const name = document.getElementById('remoteName').value.trim();
+  const ip = document.getElementById('remoteIP').value.trim();
+  const port = parseInt(document.getElementById('remotePort').value) || 54322;
+
+  if (!name || !ip) { toast('请填写设备名称和IP地址', 'error'); return; }
+
+  try {
+    const resp = await fetch('/api/devices', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name, ip, port})
+    });
+    const data = await resp.json();
+    if (data.error) { toast('添加失败: ' + data.error, 'error'); return; }
+    toast('已添加远程设备: ' + name, 'success');
+    document.getElementById('remoteName').value = '';
+    document.getElementById('remoteIP').value = '';
+    document.getElementById('remotePort').value = '54322';
+  } catch (err) {
+    toast('添加失败: ' + err.message, 'error');
+  }
+}
+
+// Remove remote device
+async function removeRemoteDevice(id) {
+  try {
+    await fetch('/api/devices?id=' + encodeURIComponent(id), { method: 'DELETE' });
+    if (state.selectedDeviceId === id) state.selectedDeviceId = null;
+    toast('已移除远程设备', 'info');
+  } catch (err) {
+    toast('移除失败: ' + err.message, 'error');
+  }
+}
+
+// Allow Enter key in add form
+document.getElementById('remotePort').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') addRemoteDevice();
+});
+document.getElementById('remoteIP').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') addRemoteDevice();
+});
+
+// File handling
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => addFiles(e.target.files));
+
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  addFiles(e.dataTransfer.files);
+});
+
+function addFiles(fileList) {
+  for (const f of fileList) {
+    if (!state.files.find(x => x.name === f.name && x.size === f.size)) {
+      state.files.push(f);
+    }
+  }
+  fileInput.value = '';
+  renderFiles();
+}
+
+function renderFiles() {
+  const el = document.getElementById('fileList');
+  const totalSizeEl = document.getElementById('totalSize');
+  if (state.files.length === 0) {
+    el.innerHTML = '';
+    totalSizeEl.textContent = '';
+  } else {
+    el.innerHTML = state.files.map((f, i) => `
+      <div class="file-item">
+        <span class="name">${escHtml(f.name)}</span>
+        <span class="size">${formatSize(f.size)}</span>
+        <span class="remove" onclick="removeFile(${i})">×</span>
+      </div>
+    `).join('');
+    const total = state.files.reduce((s, f) => s + f.size, 0);
+    totalSizeEl.textContent = '共 ' + state.files.length + ' 个文件, 总计 ' + formatSize(total);
+  }
+  updateSendBtn();
+}
+
+function removeFile(i) { state.files.splice(i, 1); renderFiles(); }
+
+function updateSendBtn() {
+  const btn = document.getElementById('sendBtn');
+  if (state.selectedDeviceId && state.files.length > 0) {
+    btn.disabled = false;
+    const device = state.devices.find(d => d.id === state.selectedDeviceId);
+    btn.textContent = '发送到 ' + (device ? device.name : '...');
+  } else {
+    btn.disabled = true;
+    btn.textContent = '选择设备并发送';
+  }
+}
+
+document.getElementById('sendBtn').addEventListener('click', async () => {
+  if (!state.selectedDeviceId || state.files.length === 0) return;
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+  btn.textContent = '发送中...';
+
+  const formData = new FormData();
+  formData.append('targetId', state.selectedDeviceId);
+  for (const f of state.files) {
+    formData.append('files', f);
+  }
+
+  try {
+    const resp = await fetch('/api/send', { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (data.error) {
+      toast('发送失败: ' + data.error, 'error');
+    } else {
+      toast('已开始发送 ' + state.files.length + ' 个文件', 'info');
+      state.files = [];
+      renderFiles();
+    }
+  } catch (err) {
+    toast('发送失败: ' + err.message, 'error');
+  }
+  btn.disabled = false;
+  updateSendBtn();
+});
+
+// Transfers
+function renderTransfers() {
+  const el = document.getElementById('transferList');
+  const items = Object.values(state.transfers).sort((a, b) => b.id.localeCompare(a.id));
+  if (items.length === 0) {
+    el.innerHTML = '<div class="empty-state">暂无传输任务</div>';
+    return;
+  }
+  el.innerHTML = items.map(t => {
+    const pct = t.size > 0 ? Math.round(t.sent / t.size * 100) : 0;
+    const cls = t.status === 'complete' ? 'complete' : t.status === 'error' ? 'error' : '';
+    const dir = t.direction === 'send' ? '↑' : '↓';
+    const statusLabel = t.status === 'transferring' ? '传输中 ' + pct + '%' : t.status === 'complete' ? '完成' : '失败';
+    return `
+      <div class="transfer-item">
+        <div class="meta">
+          <span class="tname">${dir} ${escHtml(t.name)}</span>
+          <span class="tstatus">${statusLabel} · ${formatSize(t.sent)}/${formatSize(t.size)}</span>
+        </div>
+        <div class="progress-bar"><div class="fill ${cls}" style="width:${pct}%"></div></div>
+        ${t.error ? '<div style="color:var(--error);font-size:0.78em;margin-top:4px">' + escHtml(t.error) + '</div>' : ''}
+      </div>
+    `;
+  }).join('');
+
+  const now = Date.now();
+  for (const [id, t] of Object.entries(state.transfers)) {
+    if (t.status === 'complete' || t.status === 'error') {
+      if (!t._doneTime) t._doneTime = now;
+      if (now - t._doneTime > 30000) delete state.transfers[id];
+    }
+  }
+}
+
+// Downloads
+async function loadDownloads() {
+  try {
+    const resp = await fetch('/api/downloads');
+    const data = await resp.json();
+    const el = document.getElementById('downloadList');
+    if (data.length === 0) {
+      el.innerHTML = '<div class="empty-state">暂无接收文件</div>';
+      return;
+    }
+    el.innerHTML = data.map(d => `
+      <div class="download-item">
+        <span>${escHtml(d.name)}</span>
+        <span style="color:var(--text2)">${formatSize(d.size)} · ${new Date(d.mod_time).toLocaleString()}</span>
+      </div>
+    `).join('');
+  } catch {}
+}
+loadDownloads();
+setInterval(loadDownloads, 5000);
+
+// Toast
+function toast(msg, type) {
+  type = type || 'info';
+  const c = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(function() { el.remove(); }, 4000);
+}
+
+// Utils
+function formatSize(bytes) {
+  if (bytes === 0) return '0 B';
+  var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  var i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+}
+
+function escHtml(s) {
+  var div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>
